@@ -1,37 +1,48 @@
-#temp till the model is implemented, this file will contain the logic to evaluate the traffic features and trigger the XAI pipeline if an anomaly is detected. It will also handle saving the malicious traffic data for the Streamlit dashboard and triggering desktop notifications.
 import pandas as pd
 import os
 from plyer import notification
-from phase3_shap import generate_shap_plot
 
-# Ensure output directory exists for Streamlit to read from
-os.makedirs('outputs', exist_ok=True)
+# Constants for thresholds
+IP_SPOOF_THRESHOLD = 500  # If more than 500 unique IPs appear in 5 seconds
+SINGLE_IP_SYN_THRESHOLD = 100 # If one IP sends more than 100 SYNs
 
 def evaluate_traffic(traffic_features):
-    """Evaluates live traffic and triggers XAI pipeline if anomalous."""
     
-    # PLACEHOLDER LOGIC: Simulating a model prediction. 
-    # We flag an anomaly if a single IP sends >100 SYN packets or >50,000 bytes in 5 seconds.
-    anomalies = traffic_features[(traffic_features['syn_count'] > 100) | 
-                                 (traffic_features['total_bytes'] > 50000)]
+    unique_ip_count = len(traffic_features)
+    alert_triggered = False
+    alert_msg = ""
+
+    # 1. Check for Distributed/Spoofed Attack (The 26,000 IP scenario)
+    if unique_ip_count > IP_SPOOF_THRESHOLD:
+        alert_triggered = True
+        alert_msg = f"DDoS/Spoofing Detected: {unique_ip_count} unique IPs active!"
+        # Flag all these as anomalies for the dashboard
+        anomalies = traffic_features 
     
-    if not anomalies.empty:
-        # 1. Save the malicious traffic to CSV for the Streamlit dashboard
+    # 2. Check for Single-Source SYN Flood
+    else:
+        anomalies = traffic_features[traffic_features['syn_count'] > SINGLE_IP_SYN_THRESHOLD]
+        if not anomalies.empty:
+            alert_triggered = True
+            alert_msg = f"SYN Flood detected from {len(anomalies)} source(s)."
+
+    if alert_triggered:
+        # Save to CSV so the Tkinter Dashboard updates
         anomalies.to_csv('outputs/alerts.csv', index=False)
         
-        # 2. Trigger Desktop Notification
+        # Windows Desktop Notification
         notification.notify(
-            title='XAI-IDS Alert: DoS Attack!',
-            message=f"Blocked malicious traffic from {len(anomalies)} IP(s). Check dashboard.",
+            title=' XAI-IDS SECURITY ALERT',
+            message=alert_msg,
             app_name='XAI-IDS',
-            timeout=7
+            timeout=5
         )
+        print(f"[ALERT] {alert_msg}")
         
-        # 3. Trigger SHAP Explanation (Commented out until we train the actual DNN)
-        # feature_names = ['packet_count', 'total_bytes', 'syn_count']
-        # generate_shap_plot(trained_dnn_model, anomalies[feature_names], feature_names)
-        
+        # COMBAT STEP: Suggesting a system-level response
+        if unique_ip_count > IP_SPOOF_THRESHOLD:
+            print("RECOMMENDATION: Enable Windows SYN Attack Protection (Registry modification required).")
     else:
-        # If traffic is normal, remove old alerts so the dashboard shows "Secure"
+        # Clear alerts if traffic returns to normal
         if os.path.exists('outputs/alerts.csv'):
             os.remove('outputs/alerts.csv')

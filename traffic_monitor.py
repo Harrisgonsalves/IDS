@@ -56,8 +56,7 @@ def analyze_traffic_window():
 
 def start_passive_sniffing(interface=None):
     logging.info("Starting Scapy passive network sniffing...")
-    sniff(iface=interface, prn=process_packet, store=False)
-
+    sniff(iface="VirtualBox Host-Only Ethernet Adapter", prn=process_packet, store=False)
 if __name__ == '__main__':
     logging.basicConfig(filename='traffic_monitor.log', level=logging.INFO,
                         format='%(asctime)s - %(message)s')

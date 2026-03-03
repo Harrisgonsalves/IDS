@@ -115,3 +115,5 @@ class IDS_Dashboard(tk.Tk):
 if __name__ == "__main__":
     app = IDS_Dashboard()
     app.mainloop()
+
+#sudo hping3 -S --flood --rand-source -p 8080 192.
