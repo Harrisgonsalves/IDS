@@ -1,6 +1,7 @@
 import time
 import tkinter as tk
 from tkinter import ttk, messagebox
+import customtkinter as ctk
 import pandas as pd
 import os
 import subprocess
@@ -10,12 +11,21 @@ from PIL import Image, ImageTk
 import defense
 import live_inference
 
-class IDS_Dashboard(tk.Tk):
+# Set the modern dark theme
+ctk.set_appearance_mode("dark")
+ctk.set_default_color_theme("blue")
+
+class IDS_Dashboard(ctk.CTk):
     def __init__(self):
         super().__init__()
         
-        self.title("XAI-Driven Intrusion Detection System")
-        self.geometry("800x600")
+        self.title("XAI-IDS | Security Operations Center")
+        self.geometry("1200x800")
+        
+        # Configure Grid Layout (4 rows, 2 columns)
+        self.grid_columnconfigure(0, weight=2) # Left side (Table & Logs) takes more space
+        self.grid_columnconfigure(1, weight=1) # Right side (SHAP & Controls)
+        self.grid_rowconfigure(2, weight=1)    # Let the table expand
         
         # --- UI SETUP ---
         self.setup_ui()
@@ -24,15 +34,14 @@ class IDS_Dashboard(tk.Tk):
         self.start_backend_monitor()
         
         # --- BACKGROUND GUI CHECK ---
-        self.check_alerts()
         self.update_dashboard()
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     def start_backend_monitor(self):
-        self.status_var.set("Status: Starting Backend Sniffer & AI Model...")
+        self.log_event("Starting Backend Sniffer & AI Model...")
         self.monitor_process = None
 
-        print("[SYSTEM] Wiping old traffic logs for a clean startup...")
+        self.log_event("Wiping old traffic logs for a clean startup...")
         files_to_delete = ['outputs/live_features.csv', 'outputs/alerts.csv', 'outputs/shap_alert.png']
         for file in files_to_delete:
             if os.path.exists(file):
@@ -40,6 +49,7 @@ class IDS_Dashboard(tk.Tk):
                     os.remove(file)
                 except:
                     pass
+                    
         def run_sniffer():
             self.monitor_process = subprocess.Popen(["python", "traffic_monitor.py"])
             
@@ -65,30 +75,34 @@ class IDS_Dashboard(tk.Tk):
     def update_dashboard(self):
         if os.path.exists('outputs/alerts.csv'):
             try:
-                self.status_var.set("Status: ⚠️ ANOMALY DETECTED!")
-                self.status_label.config(foreground="red")
+                # Update SOC Banner & Cards
+                self.banner.configure(text="⚠️ THREAT DETECTED | INTRUSION PREVENTION ACTIVE", fg_color="#8B0000")
+                self.threat_card.configure(text="CRITICAL", text_color="#FF4500")
+                self.status_card.configure(text="BLOCKING IPS", text_color="#FF4500")
                 
                 df = pd.read_csv('outputs/alerts.csv')
 
+                # Clear existing table data
                 for row in self.tree.get_children():
                     self.tree.delete(row)
 
+                # Populate table (Forced to string to prevent Tkinter crashes)
                 for index, row in df.iterrows():
-                    ip = row.get('_src_ip_', "Unknown")
-                    attack = row.get('Attack_Type', "Anomaly")
-                    shap_reason = row.get('SHAP_Reason', "N/A")  
-                    bytes_sent = row.get('src_bytes', 0)
-                    proto = row.get('protocol_type', "N/A")
+                    ip = str(row.get('_src_ip_', "Unknown"))
+                    attack = str(row.get('Attack_Type', "Anomaly")).upper()
+                    shap_reason = str(row.get('SHAP_Reason', "N/A"))  
+                    bytes_sent = str(row.get('src_bytes', 0))
+                    proto = str(row.get('protocol_type', "N/A"))
                     
                     self.tree.insert("", tk.END, values=(ip, attack, shap_reason, bytes_sent, proto))
                 
+                # Load SHAP Image
                 if os.path.exists('outputs/shap_alert.png'):
                     try:
                         img = Image.open('outputs/shap_alert.png')
-                        img = img.resize((600, 300), Image.Resampling.LANCZOS)
-                        photo = ImageTk.PhotoImage(img)
-                        self.image_label.config(image=photo)
-                        self.image_label.image = photo
+                        img = img.resize((450, 250), Image.Resampling.LANCZOS)
+                        photo = ctk.CTkImage(light_image=img, dark_image=img, size=(450, 250))
+                        self.image_label.configure(image=photo, text="")
                     except PermissionError:
                         print("File locked, skipping image update this second...")
                         pass
@@ -97,12 +111,14 @@ class IDS_Dashboard(tk.Tk):
                 print(f"UI Update Error: {e}")
                 
         else:
-            self.status_var.set("Status: ✅ Normal Traffic / Listening...")
-            self.status_label.config(foreground="green")
+            # Revert to Normal Mode
+            self.banner.configure(text="SYSTEM SECURE | MONITORING TRAFFIC", fg_color="green")
+            self.threat_card.configure(text="LOW", text_color="white")
+            self.status_card.configure(text="ONLINE", text_color="white")
             
             for row in self.tree.get_children():
                 self.tree.delete(row)
-            self.image_label.config(image='')
+            self.image_label.configure(image="", text="No anomalies detected.\nWaiting for SHAP data...")
 
         # Refresh every 2 seconds
         self.after(2000, self.update_dashboard)
@@ -112,107 +128,102 @@ class IDS_Dashboard(tk.Tk):
         if self.monitor_process:
             self.monitor_process.kill()
 
-    def setup_ui(self):
-        # Header Area
-        header = ttk.Frame(self)
-        header.pack(fill=tk.X, padx=20, pady=20)
-        
-        ttk.Label(header, text="XAI-IDS Security Dashboard", font=("Arial", 18, "bold")).pack(side=tk.LEFT)
-        
-        # Status Label
-        self.status_var = tk.StringVar()
-        self.status_label = ttk.Label(self, textvariable=self.status_var, font=("Arial", 12))
-        self.status_label.pack(pady=10)
-        
-        # Alert Table Area
-        self.tree = ttk.Treeview(self, columns=("IP", "Attack Type", "Reason", "Bytes", "Protocol"), show="headings", height=5)
-        self.tree.heading("IP", text="Source IP")
-        self.tree.heading("Attack Type", text="ML Prediction (Type)")
-        self.tree.heading("Reason", text="Top Feature (SHAP)")
-        self.tree.heading("Bytes", text="Source Bytes")
-        self.tree.heading("Protocol", text="Protocol")
-        self.tree.pack(fill=tk.X, padx=20)
-        
-        # --- SHAP Image Area ---
-        
-        self.tree.column("Reason", width=150)
-        self.tree.pack(fill=tk.X, padx=20)
-        self.image_label = ttk.Label(self)
-        self.image_label.pack(pady=20, fill=tk.BOTH, expand=True)
-        
-        # 2. Add the Image Label for SHAP
-        self.image_label = ttk.Label(self)
-        self.image_label.pack(pady=20, fill=tk.BOTH, expand=True)
+    def log_event(self, message):
+        """Writes a message to the SOC log terminal"""
+        try:
+            self.log_box.configure(state="normal")
+            timestamp = time.strftime("%H:%M:%S")
+            self.log_box.insert("end", f"[{timestamp}] {message}\n")
+            self.log_box.see("end") 
+            self.log_box.configure(state="disabled")
+        except:
+            pass # Failsafe if logs haven't rendered yet
 
-        btn_frame = ttk.Frame(self)
-        btn_frame.pack(fill=tk.X, padx=20, pady=5)
+    def setup_ui(self):
+        # --- 1. ALERT BANNER ---
+        self.banner = ctk.CTkLabel(self, text="SYSTEM SECURE | MONITORING TRAFFIC", 
+                                   fg_color="green", text_color="white", 
+                                   font=ctk.CTkFont(size=18, weight="bold"), corner_radius=0)
+        self.banner.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+
+        # --- 2. STATUS CARDS (Row 1) ---
+        self.cards_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.cards_frame.grid(row=1, column=0, columnspan=2, sticky="ew", padx=20, pady=10)
+        self.cards_frame.grid_columnconfigure((0, 1, 2), weight=1)
+
+        self.status_card = self.create_card(self.cards_frame, "System Status", "ONLINE", 0)
+        self.threat_card = self.create_card(self.cards_frame, "Threat Level", "LOW", 1)
+        self.model_card = self.create_card(self.cards_frame, "AI Model", "Random Forest (Active)", 2)
+
+        # --- 3. DETECTED CONNECTIONS TABLE (Row 2, Left) ---
+        self.table_frame = ctk.CTkFrame(self)
+        self.table_frame.grid(row=2, column=0, sticky="nsew", padx=(20, 10), pady=10)
         
-        self.unblock_btn = ttk.Button(
-            btn_frame, 
-            text=" Reset Firewall (Unblock All IPs)", 
-            command=self.reset_firewall
-        )
-        self.unblock_btn.pack(side=tk.RIGHT)
+        ctk.CTkLabel(self.table_frame, text="Active Network Threats", font=ctk.CTkFont(weight="bold")).pack(pady=5)
+        
+        # Dark Theme for standard ttk.Treeview
+        style = ttk.Style()
+        style.theme_use("default")
+        style.configure("Treeview", background="#2b2b2b", foreground="white", fieldbackground="#2b2b2b", borderwidth=0)
+        style.configure("Treeview.Heading", background="#1f538d", foreground="white", font=('Arial', 10, 'bold'))
+        style.map('Treeview', background=[('selected', '#1f538d')])
+
+        self.tree = ttk.Treeview(self.table_frame, columns=("IP", "Attack", "SHAP", "Bytes", "Protocol"), show="headings", height=10)
+        self.tree.heading("IP", text="Source IP")
+        self.tree.heading("Attack", text="ML Prediction")
+        self.tree.heading("SHAP", text="Top SHAP Feature")
+        self.tree.heading("Bytes", text="Bytes")
+        self.tree.heading("Protocol", text="Protocol")
+        self.tree.column("SHAP", width=150)
+        self.tree.pack(fill="both", expand=True, padx=10, pady=10)
+
+        # --- 4. XAI SHAP EXPLANATION (Row 2, Right) ---
+        self.xai_frame = ctk.CTkFrame(self)
+        self.xai_frame.grid(row=2, column=1, sticky="nsew", padx=(10, 20), pady=10)
+        
+        ctk.CTkLabel(self.xai_frame, text="Explainable AI (SHAP Analysis)", font=ctk.CTkFont(weight="bold")).pack(pady=5)
+        
+        self.image_label = ctk.CTkLabel(self.xai_frame, text="No anomalies detected.\nWaiting for SHAP data...")
+        self.image_label.pack(fill="both", expand=True, padx=10, pady=10)
+
+        # --- 5. SECURITY LOGS (Row 3, Left) ---
+        self.logs_frame = ctk.CTkFrame(self)
+        self.logs_frame.grid(row=3, column=0, sticky="nsew", padx=(20, 10), pady=(10, 20))
+        
+        ctk.CTkLabel(self.logs_frame, text="Real-Time Security Logs", font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=10)
+        self.log_box = ctk.CTkTextbox(self.logs_frame, height=120)
+        self.log_box.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        self.log_box.insert("0.0", "[SYSTEM] SOC Dashboard initialized. Awaiting traffic...\n")
+        self.log_box.configure(state="disabled") 
+
+        # --- 6. FIREWALL CONTROLS (Row 3, Right) ---
+        self.controls_frame = ctk.CTkFrame(self)
+        self.controls_frame.grid(row=3, column=1, sticky="nsew", padx=(10, 20), pady=(10, 20))
+        
+        ctk.CTkLabel(self.controls_frame, text="Firewall Controls", font=ctk.CTkFont(weight="bold")).pack(pady=5)
+        
+        self.btn_unblock = ctk.CTkButton(self.controls_frame, text="Reset Firewall (Unblock All IPs)", fg_color="#8B0000", hover_color="#5C0000", command=self.reset_firewall)
+        self.btn_unblock.pack(pady=10, padx=20, fill="x")
+
+    def create_card(self, parent, title, value, col):
+        """Helper to create SOC metric cards"""
+        frame = ctk.CTkFrame(parent, fg_color="#1e1e1e", corner_radius=10)
+        frame.grid(row=0, column=col, sticky="ew", padx=10)
+        ctk.CTkLabel(frame, text=title, font=ctk.CTkFont(size=14, weight="bold"), text_color="gray").pack(pady=(10, 0))
+        val_label = ctk.CTkLabel(frame, text=value, font=ctk.CTkFont(size=24, weight="bold"))
+        val_label.pack(pady=(5, 10))
+        return val_label
 
     def reset_firewall(self):
         """Calls the defense script to remove all IDS firewall rules."""
         try:
-            # Call the function from defense.py
             defense.unblock_all()
-            
-            # Show a success popup
+            self.log_event("Firewall reset initiated. All IDS blocks removed.")
             messagebox.showinfo("Firewall Reset", "All IDS blocking rules have been removed from Windows Firewall.")
-            
-            # Update the dashboard status
-            self.status_var.set("Status:  Firewall Reset. Traffic unblocked.")
-            self.status_label.config(foreground="green")
-            
+            self.banner.configure(text="FIREWALL RESET | TRAFFIC UNBLOCKED", fg_color="green")
         except Exception as e:
             messagebox.showerror("Error", f"Failed to reset firewall: {e}\n\nMake sure you are running the app as Administrator.")
-    
-    def check_alerts(self):
-        alert_path = "outputs/alerts.csv"
-        shap_image_path = "outputs/shap_latest_alert.png"
-        
-        if os.path.exists(alert_path):
-            self.status_var.set("Status: 🚨 ANOMALY DETECTED!")
-            self.status_label.config(foreground="red")
-            
-            try:
-                # Load CSV data
-                df = pd.read_csv(alert_path)
-                
-                # Clear existing table data
-                for item in self.tree.get_children():
-                    self.tree.delete(item)
-                    
-                # Populate table
-                for index, row in df.iterrows():
-                    self.tree.insert("", tk.END, values=(row['src_ip'], row['packet_count'], row['total_bytes'], row['syn_count']))
-                
-                # Load and display SHAP Image
-                if os.path.exists(shap_image_path):
-                    img = Image.open(shap_image_path)
-                    img = img.resize((600, 300), Image.Resampling.LANCZOS)
-                    photo = ImageTk.PhotoImage(img)
-                    self.image_label.config(image=photo)
-                    self.image_label.image = photo 
-                else:
-                    self.image_label.config(text="Generating SHAP explanation...", image="")
-                    
-            except Exception:
-                pass 
-        else:
-            self.status_var.set("Status: Secure (Sniffing Network...)")
-            self.status_label.config(foreground="green")
-            
-            for item in self.tree.get_children():
-                self.tree.delete(item)
-            self.image_label.config(image="", text="No SHAP data to display.")
-        
-        # Check every 2 seconds
-        self.after(2000, self.check_alerts)
-    
+
     def on_closing(self):
         print("[SYSTEM] Shutting down XAI-IDS Pipeline...")
 
@@ -223,7 +234,6 @@ class IDS_Dashboard(tk.Tk):
                 pass
 
         self.destroy()
-
         os._exit(0)
 
 if __name__ == "__main__":
