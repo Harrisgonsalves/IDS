@@ -33,6 +33,7 @@ def process_packet(packet):
     global packet_history
     current_time = time.time()
 
+    # Maintain 2-second sliding window
     packet_history = [p for p in packet_history if current_time - p['time'] <= 2.0]
 
     if IP in packet:
@@ -55,47 +56,59 @@ def process_packet(packet):
         elif packet.haslayer(UDP):
             dst_port = packet[UDP].dport
 
+        # --- FEATURE CALCULATIONS ---
+        # Time-based Volume
         count = sum(1 for p in packet_history if p['dst_ip'] == dst_ip)
-        
         srv_count = sum(1 for p in packet_history if p['dst_port'] == dst_port and dst_port != 0)
 
+        # Statistical Rates
         serror_rate = 1.0 if flag_str == 'S0' else 0.0
-        srv_serror_rate = 1.0 if flag_str == 'S0' else 0.0
         same_srv_rate = 1.0 if count > 0 else 0.0
         
+        # PROBE DETECTION: High count of different services
+        # If count is high but we are seeing many different ports, this identifies a scan
+        diff_srv_rate = 1.0 if (count > 20 and src_bytes < 500) else 0.0
+
+        # Update History
         packet_history.append({
             'time': current_time, 
             'dst_ip': dst_ip, 
             'dst_port': dst_port
         })
 
-        # Build the dictionary
+        # --- BUILD COMPLETE DICTIONARY ---
         feature_dict = {col: 0 for col in ML_COLUMNS} 
 
+        # Identification
         feature_dict["protocol_type"] = protocol_str
         feature_dict["service"] = service_str
         feature_dict["flag"] = flag_str
         feature_dict["src_bytes"] = src_bytes
         feature_dict["dst_bytes"] = dst_bytes
+        
+        # Traffic Features (DoS & Probe)
         feature_dict["count"] = count          
         feature_dict["srv_count"] = srv_count 
-        
-        feature_dict["_src_ip_"] = src_ip 
-        live_traffic_buffer.append(feature_dict)
-
         feature_dict["serror_rate"] = serror_rate
-        feature_dict["srv_serror_rate"] = srv_serror_rate
+        feature_dict["srv_serror_rate"] = serror_rate
         feature_dict["same_srv_rate"] = same_srv_rate
+        feature_dict["diff_srv_rate"] = diff_srv_rate # Critical for Probe
 
+        # Host-based mirroring (NSL-KDD Signature)
         feature_dict["dst_host_count"] = count
         feature_dict["dst_host_srv_count"] = srv_count
         feature_dict["dst_host_same_srv_rate"] = same_srv_rate
+        feature_dict["dst_host_diff_srv_rate"] = diff_srv_rate
         feature_dict["dst_host_serror_rate"] = serror_rate
-        feature_dict["dst_host_srv_serror_rate"] = srv_serror_rate
+        feature_dict["dst_host_srv_serror_rate"] = serror_rate
         
+        # Internal tracking for firewall/UI
+        feature_dict["_src_ip_"] = src_ip 
+
+        # --- SAVE TO BUFFER (ONLY ONCE) ---
         with buffer_lock:
             live_traffic_buffer.append(feature_dict)
-
+            
 def flush_buffer():
     global live_traffic_buffer
     while True:

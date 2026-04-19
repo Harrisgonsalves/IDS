@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import joblib
 import os
 import defense
@@ -91,13 +92,14 @@ def evaluate_traffic(csv_path="outputs/live_features.csv"):
         for ip in unique_attackers:
             if ip != "192.168.56.1": 
                 defense.block_ip(ip)
+                #continue
         # 5. Generate the SHAP Graph
         generate_shap_explanation(model, X_live, attack_indices[0])
     else:
         if os.path.exists('outputs/alerts.csv'):
             os.remove('outputs/alerts.csv')
 
-import numpy as np
+
 
 def generate_shap_explanation(model, X_live, attack_index):
     print("[XAI] Generating SHAP Explanation for the blocked packet...")
@@ -105,33 +107,50 @@ def generate_shap_explanation(model, X_live, attack_index):
         malicious_packet = X_live.iloc[[attack_index]]
         explainer = shap.TreeExplainer(model)
         shap_values = explainer.shap_values(malicious_packet)
-        
-        values_to_analyze = shap_values[1] if isinstance(shap_values, list) else shap_values
 
+        values_to_analyze = shap_values[1] if isinstance(shap_values, list) else shap_values
         feature_names = X_live.columns
-        
         flat_values = np.array(values_to_analyze[0]).flatten()
         
-        # Find the index of the highest absolute SHAP value
         top_feature_idx = int(np.argmax(np.abs(flat_values))) 
         top_feature = feature_names[top_feature_idx]
-        
-        # FIX: Convert it to a standard Python float!
         top_value = float(flat_values[top_feature_idx])
         
-        # Format it nicely, e.g., "count (+0.450)"
         shap_text = f"{top_feature} ({top_value:+.3f})"
 
-        # Save the plot
-        import matplotlib.pyplot as plt
-        import matplotlib
-        matplotlib.use('Agg')
-        plt.figure(figsize=(8, 4))
-        shap.summary_plot(values_to_analyze, malicious_packet, plot_type="bar", show=False)
-        plt.savefig('outputs/shap_alert.png', bbox_inches='tight')
+        plt.style.use('dark_background')
+
+        fig = plt.figure(figsize=(8, 4), facecolor='#2b2b2b')
+        ax = fig.add_subplot(111)
+        ax.set_facecolor('#2b2b2b')
+
+        custom_colors = ["#C47A9A", "#90AA7C"]
+        
+        # Pass the FULL shap_values list to force the stacked bars
+        shap.summary_plot(values_to_analyze, malicious_packet, plot_type="bar", 
+                          color="#C47A9A", show=False)
+
+        # Style the axes and grid for the dark theme
+        ax = plt.gca()
+        ax.set_xlabel("Mean |SHAP value| (Impact on Class Prediction)", fontsize=12, fontweight='bold', color='white')
+        ax.set_ylabel("Network Features", fontsize=12, fontweight='bold', color='white')
+
+        ax.xaxis.grid(True, linestyle='--', color='#555555')
+        ax.set_axisbelow(True)
+
+        plt.xticks(fontsize=12, fontweight='bold', color='white')
+        plt.yticks(fontsize=14, fontweight='bold', color='white')
+
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.spines['bottom'].set_color('#555555')
+        ax.spines['left'].set_color('#555555')
+
+        #  dark background
+        plt.savefig('outputs/shap_alert.png', bbox_inches='tight', 
+                    facecolor=fig.get_facecolor(), edgecolor='none', dpi=100)
         plt.close()
         print("[XAI] SHAP plot saved successfully.")
-        
         return shap_text 
         
     except Exception as e:

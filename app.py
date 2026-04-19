@@ -11,7 +11,6 @@ from PIL import Image, ImageTk
 import defense
 import live_inference
 
-# Set the modern dark theme
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
