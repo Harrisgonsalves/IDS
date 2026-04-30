@@ -21,6 +21,8 @@ ML_COLUMNS = [
 live_traffic_buffer = []
 packet_history = []  
 buffer_lock = threading.Lock()
+ip_throttle_tracker = {}
+MAX_PACKETS_PER_SEC = 5
 
 def map_tcp_flags(flags):
     """Maps raw Scapy TCP flags to the KDD dataset 'flag' format."""
@@ -39,6 +41,18 @@ def process_packet(packet):
     if IP in packet:
         src_ip = packet[IP].src
         dst_ip = packet[IP].dst
+        if src_ip not in ip_throttle_tracker:
+            ip_throttle_tracker[src_ip] = {'count': 0, 'time': current_time}
+            
+        # Reset counter if a second has passed
+        if current_time - ip_throttle_tracker[src_ip]['time'] > 1.0:
+            ip_throttle_tracker[src_ip] = {'count': 0, 'time': current_time}
+            
+        ip_throttle_tracker[src_ip]['count'] += 1
+        
+        # If this IP is flooding us, drop the packet from ML analysis (Firewall will handle the rest)
+        if ip_throttle_tracker[src_ip]['count'] > MAX_PACKETS_PER_SEC:
+            return
         protocol_str = "icmp" if packet.haslayer(ICMP) else ("udp" if packet.haslayer(UDP) else "tcp")
         src_bytes = len(packet)
         dst_bytes = 0 
@@ -129,4 +143,4 @@ threading.Thread(target=flush_buffer, daemon=True).start()
 
 print("Stateful Flow Sniffer active on VirtualBox Lab...")
 # Ensure this exactly matches your Windows Network Connections name!
-sniff(iface="VirtualBox Host-Only Ethernet Adapter", prn=process_packet, store=False)
+sniff(iface="VirtualBox Host-Only Ethernet Adapter", prn=process_packet, store=0)
