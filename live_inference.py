@@ -86,7 +86,7 @@ def evaluate_traffic(csv_path="outputs/live_features.csv"):
         
         unique_attackers = attacker_ips.iloc[attack_indices].unique()
         for ip in unique_attackers:
-            if ip != "192.168.56.1": 
+            if ip != "192.168.XXX.XXX":            #your ip mention so it does not block itself
                 defense.block_ip(ip)
                 
     else:
